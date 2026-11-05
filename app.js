@@ -102,11 +102,13 @@ $('dailyMonth').onchange=drawDailyPerformance;
 
 
 let budgetTargets={},budgetLoaded=false,budgetInfo='목표 불러오는 중…';
+function budgetMediaKey(name){return String(name).trim().toLowerCase().replace(/[\s_-]+/g,'')}
+function budgetMediaLabel(name){return {meta:'Meta',google:'Google',chatgpt:'Chat GPT',criteo:'Criteo'}[name]||name}
 function budgetSummary(rs,targets,month){
- const selected=rs.filter(r=>r.date.slice(0,7)===month&&['meta','google'].includes(r.media.toLowerCase()));
- const spent=selected.reduce((sum,r)=>sum+r.cost,0),t=targets[month];
- const complete=!!t&&t.meta!=null&&t.google!=null,target=complete?t.meta+t.google:null;
- return {spent,target,rate:target>0?spent/target*100:null,latest:['meta','google'].map(m=>{const ds=selected.filter(r=>r.media.toLowerCase()===m).map(r=>r.date).sort();return m+': '+(ds.at(-1)||'데이터 없음')}).join(' / ')};
+ const t=targets[month],media=t?Object.keys(t):['meta','google'];
+ const selected=rs.filter(r=>r.date.slice(0,7)===month&&media.includes(budgetMediaKey(r.media)));
+ const spent=selected.reduce((sum,r)=>sum+r.cost,0),complete=!!t&&media.length>0&&media.every(m=>t[m]!=null),target=complete?media.reduce((sum,m)=>sum+t[m],0):null;
+ return {spent,target,rate:target>0?spent/target*100:null,media,latest:media.map(m=>{const ds=selected.filter(r=>budgetMediaKey(r.media)===m).map(r=>r.date).sort();return budgetMediaLabel(m)+': '+(ds.at(-1)||'RAW 데이터 없음')}).join(' / ')};
 }
 function drawBudget(){
  $('budgetPanel').hidden=view!=='summary';
@@ -119,17 +121,22 @@ function drawBudget(){
  $('budgetFill').classList.toggle('over',z.rate>100);
  $('budgetProgress').setAttribute('aria-valuenow',String(Math.min(100,z.rate||0)));
  $('budgetProgress').setAttribute('aria-valuetext',z.rate==null?'목표 미설정 또는 목표 0원':z.rate.toFixed(2)+'%');
- $('budgetRemaining').textContent=z.target==null?'Budget 시트에 Meta·Google 목표를 모두 입력해주세요.':z.spent>z.target?'예산 초과 '+num(z.spent-z.target)+'원':'남은 예산 '+num(z.target-z.spent)+'원';
- $('budgetBasis').textContent=month+' 월 전체 · '+z.latest+' · 상단 기간·매체·상품 필터와 별도 집계 · 공통 목표: '+budgetInfo+(t?' · Meta '+(t.meta==null?'미설정':num(t.meta)+'원')+' / Google '+(t.google==null?'미설정':num(t.google)+'원'):'');
+ $('budgetRemaining').textContent=z.target==null?'Budget 시트의 매체별 목표를 모두 입력해주세요.':z.spent>z.target?'예산 초과 '+num(z.spent-z.target)+'원':'남은 예산 '+num(z.target-z.spent)+'원';
+ $('budgetBasis').textContent=month+' 월 전체 · '+z.latest+' · 상단 기간·매체·상품 필터와 별도 집계 · 공통 목표: '+budgetInfo+(t?' · '+Object.entries(t).map(([m,v])=>budgetMediaLabel(m)+' '+(v==null?'미설정':num(v)+'원')).join(' / '):'');
 }
 function parseBudgetTable(table){
- const indexes=['month','meta','google'].map(k=>table.cols.findIndex(c=>String(c.label).trim().toLowerCase()===k));if(indexes.some(i=>i<0))throw Error('Budget 헤더는 month / meta / google이어야 합니다.');
- const targets={};for(const r of table.rows){const cells=indexes.map(i=>r.c[i]?.v??null);if(cells[0]==null||cells[0]==='')continue;const month=String(cells[0]).trim();if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw Error('월 형식 오류: YYYY-MM 텍스트로 입력하세요.');if(targets[month])throw Error(month+' 월이 중복되었습니다.');
- const amounts=cells.slice(1).map(v=>{if(v==null||String(v).trim()==='')return null;const n=Number(String(v).replace(/,/g,''));if(!Number.isFinite(n)||n<0)throw Error('목표는 0 이상의 숫자로 입력하세요.');return n});targets[month]={meta:amounts[0],google:amounts[1]};}return targets;
+ const headers=table.cols.map(c=>String(c.label||'').trim()),monthIndex=headers.findIndex(h=>h.toLowerCase()==='month');
+ const columns=headers.map((h,i)=>({key:budgetMediaKey(h),i})).filter(c=>c.i!==monthIndex&&c.key&&!['입력안내','note','notes'].includes(c.key));
+ if(monthIndex<0||!columns.length)throw Error('Budget에 month와 매체 목표 열이 필요합니다.');
+ if(new Set(columns.map(c=>c.key)).size!==columns.length)throw Error('매체명이 중복되었습니다.');
+ const targets={};for(const r of table.rows){
+ const raw=r.c[monthIndex]?.v;if(raw==null||raw==='')continue;const month=String(raw).trim();if(!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month))throw Error('월 형식 오류: YYYY-MM 텍스트로 입력하세요.');if(targets[month])throw Error(month+' 월이 중복되었습니다.');
+ const amounts={};for(const c of columns){const v=r.c[c.i]?.v;const n=v==null||String(v).trim()===''?null:Number(String(v).replace(/,/g,''));if(n!=null&&(!Number.isFinite(n)||n<0))throw Error('목표는 0 이상의 숫자로 입력하세요.');amounts[c.key]=n}targets[month]=amounts;
+ }return targets;
 }
 async function refreshBudget(){
  const b=$('budgetRefresh');b.disabled=true;
- try{budgetTargets=await new Promise((resolve,reject)=>{const name='manyoBudget_'+Date.now(),script=document.createElement('script');let timer;const clean=()=>{clearTimeout(timer);script.remove();delete window[name]};window[name]=r=>{clean();try{if(r.status!=='ok')throw Error('Budget 접근 권한 확인 필요');resolve(parseBudgetTable(r.table))}catch(e){reject(e)}};script.onerror=()=>{clean();reject(Error('Budget 연결 실패'))};timer=setTimeout(()=>{clean();reject(Error('Budget 조회 시간 초과'))},15000);script.src='https://docs.google.com/spreadsheets/d/10v_FoeIpq93l0ntxvb42CP1v1l9e_jMLa-SPu-GF73Y/gviz/tq?gid=1984609014&range=A:C&headers=1&tqx='+encodeURIComponent('out:json;responseHandler:'+name)+'&t='+Date.now();document.head.appendChild(script)});
+ try{budgetTargets=await new Promise((resolve,reject)=>{const name='manyoBudget_'+Date.now(),script=document.createElement('script');let timer;const clean=()=>{clearTimeout(timer);script.remove();delete window[name]};window[name]=r=>{clean();try{if(r.status!=='ok')throw Error('Budget 접근 권한 확인 필요');resolve(parseBudgetTable(r.table))}catch(e){reject(e)}};script.onerror=()=>{clean();reject(Error('Budget 연결 실패'))};timer=setTimeout(()=>{clean();reject(Error('Budget 조회 시간 초과'))},15000);script.src='https://docs.google.com/spreadsheets/d/10v_FoeIpq93l0ntxvb42CP1v1l9e_jMLa-SPu-GF73Y/gviz/tq?gid=1984609014&headers=1&tqx='+encodeURIComponent('out:json;responseHandler:'+name)+'&t='+Date.now();document.head.appendChild(script)});
  budgetLoaded=true;budgetInfo='조회 '+new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'})+' KST';
  }catch(e){budgetInfo=(budgetLoaded?'이전 목표 유지 · ':'')+e.message}finally{b.disabled=false;drawBudget()}
 }
