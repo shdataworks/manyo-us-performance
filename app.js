@@ -143,9 +143,27 @@ $('nav').onclick=e=>{let b=e.target.closest('[data-view]');if(b)switchView(b.dat
 };$('prev').onclick=()=>{page--;render()};$('next').onclick=()=>{page++;render()};
 function compare(){let ids=['aStart','aEnd','bStart','bEnd'];if(ids.some(id=>!$(id).value)||$('aStart').value>$('aEnd').value||$('bStart').value>$('bEnd').value){$('cmp').textContent='유효한 비교 기간을 선택하세요.';return}let rs=scope(),a=total(rs.filter(r=>r.date>=$('aStart').value&&r.date<=$('aEnd').value)),b=total(rs.filter(r=>r.date>=$('bStart').value&&r.date<=$('bEnd').value));$('cmp').innerHTML='<div class="tablewrap"><table><tr><th>지표</th><th>기준 A</th><th>비교 B</th><th>증감 B−A</th><th>증감률</th></tr>'+cols.map(k=>{let diff=a[k]==null||b[k]==null?null:b[k]-a[k];return '<tr><td>'+labels[k]+'</td><td>'+fmt(a[k],k)+'</td><td>'+fmt(b[k],k)+'</td><td>'+(diff==null?'—':fmt(diff,k)+(['roas','ctr','cvr'].includes(k)?'p':''))+'</td><td>'+(a[k]&&diff!=null?(diff/a[k]*100).toFixed(1)+'%':'—')+'</td></tr>'}).join('')+'</table></div>'};$('compare').onclick=compare;
 function download(){let csv=[['항목',...cols.map(k=>labels[k])],...displayRows.map(r=>[r.name,...cols.map(k=>r[k]??'')])].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');let u=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=u;a.download='manyo-us-performance.csv';a.click();URL.revokeObjectURL(u)}$('export').onclick=download;
-function readGoogleSheet(){return new Promise((resolve,reject)=>{const name='manyoRaw_'+Date.now(),script=document.createElement('script');let timer;const clean=()=>{clearTimeout(timer);script.remove();delete window[name]};window[name]=response=>{clean();try{if(response.status!=='ok')throw Error(response.errors?.[0]?.detailed_message||'시트 접근 불가');const table=response.table;const header=table.cols.map(c=>c.label);const data=[header,...table.rows.map(r=>table.cols.map((c,i)=>{const cell=r.c[i];if(!cell)return '';if(c.type==='date'&&typeof cell.v==='string'){const m=cell.v.match(/^Date\((\d+),(\d+),(\d+)/);if(m)return iso(Date.UTC(+m[1],+m[2],+m[3]))}return cell.v??''}))];normalize(data);resolve(data)}catch(e){reject(e)}};script.onerror=()=>{clean();reject(Error('원본 공개 조회 실패'))};timer=setTimeout(()=>{clean();reject(Error('원본 응답 시간 초과'))},15000);script.src='https://docs.google.com/spreadsheets/d/10v_FoeIpq93l0ntxvb42CP1v1l9e_jMLa-SPu-GF73Y/gviz/tq?gid=0&headers=1&tqx='+encodeURIComponent('out:json;responseHandler:'+name)+'&t='+Date.now();document.head.appendChild(script)})}
-async function refresh(){refreshBudget();const b=$('refresh');b.disabled=true;b.textContent='조회 중…';try{const data=await readGoogleSheet();install(data,'Google Sheets 실시간 조회');$('status').textContent+=' · 전체 광고비 '+num(total(rows).cost)+' · Meta '+num(total(rows.filter(r=>r.media.toLowerCase()==="meta")).cost)+' · 조회 '+new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'});if(view==='compare')compare()}catch(e){$('status').textContent='새로고침 실패 · '+mode+' '+num(rows.length)+'행 유지 · 최신 일자 '+rows.map(r=>r.date).sort().at(-1)+' · 원본 시트를 링크가 있는 모든 사용자: 뷰어로 공유해야 합니다. ('+e.message+')'}finally{b.disabled=false;b.textContent='↻ 데이터 새로고침'}}
-$('refresh').onclick=refresh;$('file').onchange=async e=>{try{install(parseCSV(await e.target.files[0].text()),'CSV 직접 불러오기')}catch(e){$('status').textContent='CSV 오류: '+e.message}};fetch('data.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{install(d,'2026-10-30 검증 스냅샷');switchView('summary');refresh()}).catch(e=>$('status').textContent='데이터 로드 오류: '+e.message);
+const DASHBOARD_FEED_URL = '';
+const DEPLOYED_BUDGET = [["month","meta","google","Chat GPT","Criteo"],["2026-10",10000000,2000000,"",""],["2026-11",50000000,10000000,10000000,5000000],["2026-12","","","",""]];
+async function readDashboardFeed(dataset) {
+  if (!DASHBOARD_FEED_URL) throw Error('실시간 연결 준비 중');
+  const url = new URL(DASHBOARD_FEED_URL);
+  url.searchParams.set('dataset', dataset);
+  url.searchParams.set('_', Date.now());
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(url, {cache: 'no-store', credentials: 'omit', signal: controller.signal});
+    if (!response.ok) throw Error('연결 응답 오류: ' + response.status);
+    const result = await response.json();
+    if (!result.ok || !Array.isArray(result.rows)) throw Error('유효한 대시보드 데이터가 없습니다.');
+    return result.rows;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function refresh(){refreshBudget();const b=$('refresh');b.disabled=true;b.textContent='조회 중…';try{const data=await readDashboardFeed('raw');install(data,'Google Sheets 실시간 조회');$('status').textContent+=' · 전체 광고비 '+num(total(rows).cost)+' · Meta '+num(total(rows.filter(r=>r.media.toLowerCase()==="meta")).cost)+' · 조회 '+new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'});if(view==='compare')compare()}catch(e){$('status').textContent='새로고침 실패 · '+mode+' '+num(rows.length)+'행 유지 · 최신 일자 '+rows.map(r=>r.date).sort().at(-1)+' · 최신 데이터 연결을 확인해 주세요. ('+e.message+')'}finally{b.disabled=false;b.textContent='↻ 데이터 새로고침'}}
+$('refresh').onclick=refresh;$('file').onchange=async e=>{try{install(parseCSV(await e.target.files[0].text()),'CSV 직접 불러오기')}catch(e){$('status').textContent='CSV 오류: '+e.message}};fetch('data.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{install(d,'배포 저장본');switchView('summary');if(DASHBOARD_FEED_URL)refresh()}).catch(e=>$('status').textContent='데이터 로드 오류: '+e.message);
 
 function updateKeywordOptions(){let candidates=rows.filter(r=>r.media.toLowerCase()==='google'&&r['ad type'].toUpperCase()==='SA');for(const [id,key] of [['keywordCampaign','campaign'],['keywordAdset','adset']]){let old=$(id).value;let available=id==='keywordAdset'&&$('keywordCampaign').value?candidates.filter(r=>r.campaign===$('keywordCampaign').value):candidates;let options=[...new Set(available.map(r=>r[key]))].sort();$(id).innerHTML='<option value="">전체</option>'+options.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');$(id).value=options.includes(old)?old:'';}}
 $('keywordCampaign').onchange=()=>{updateKeywordOptions();page=0;render()};$('keywordAdset').onchange=()=>{page=0;render()};$('keywordQuery').oninput=()=>{page=0;render()};$('keywordReset').onclick=()=>{['keywordCampaign','keywordAdset','keywordQuery','search'].forEach(id=>$(id).value='');updateKeywordOptions();page=0;render()};
@@ -211,9 +229,18 @@ function parseBudgetTable(table){
 }
 async function refreshBudget(){
  const b=$('budgetRefresh');b.disabled=true;
- try{budgetTargets=await new Promise((resolve,reject)=>{const name='manyoBudget_'+Date.now(),script=document.createElement('script');let timer;const clean=()=>{clearTimeout(timer);script.remove();delete window[name]};window[name]=r=>{clean();try{if(r.status!=='ok')throw Error('Budget 접근 권한 확인 필요');resolve(parseBudgetTable(r.table))}catch(e){reject(e)}};script.onerror=()=>{clean();reject(Error('Budget 연결 실패'))};timer=setTimeout(()=>{clean();reject(Error('Budget 조회 시간 초과'))},15000);script.src='https://docs.google.com/spreadsheets/d/10v_FoeIpq93l0ntxvb42CP1v1l9e_jMLa-SPu-GF73Y/gviz/tq?gid=1984609014&headers=1&tqx='+encodeURIComponent('out:json;responseHandler:'+name)+'&t='+Date.now();document.head.appendChild(script)});
- budgetLoaded=true;budgetInfo='조회 '+new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'})+' KST';
- }catch(e){budgetInfo=(budgetLoaded?'이전 목표 유지 · ':'')+e.message}finally{b.disabled=false;drawBudget()}
+ try {
+ const [headers,...values]=DASHBOARD_FEED_URL ? await readDashboardFeed('budget') : DEPLOYED_BUDGET;
+ budgetTargets=parseBudgetTable({cols:headers.map(label=>({label})),rows:values.map(row=>({c:row.map(v=>({v}))}))});
+ budgetLoaded=true;budgetInfo=DASHBOARD_FEED_URL?'조회 '+new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'})+' KST':'배포 저장본';
+  }catch(e){
+ if(!budgetLoaded){
+   const [headers,...values]=DEPLOYED_BUDGET;
+   budgetTargets=parseBudgetTable({cols:headers.map(label=>({label})),rows:values.map(row=>({c:row.map(v=>({v}))}))});
+   budgetLoaded=true;
+   budgetInfo='배포 저장본 · 실시간 조회 실패';
+ }else budgetInfo='이전 목표 유지 · '+e.message;
+ }finally{b.disabled=false;drawBudget()}
 }
 $('budgetMonth').onchange=drawBudget;$('budgetRefresh').onclick=refreshBudget;refreshBudget();
 
