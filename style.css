@@ -14,3 +14,12 @@
 .product-share{font-size:10px;font-weight:400;color:#8190a6;margin-left:10px;white-space:nowrap}.barlabel strong{white-space:nowrap}
 
 .barrow>.product-share{display:block;margin:7px 0 0;font-size:10px;line-height:1.5;color:#8190a6}.barrow:has(>.product-share){margin:20px 0 24px}
+
+.detail-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+#table .keyword-total td{background:#eff4fb;font-weight:600}
+#table .keyword-total small,#table .keyword-campaign small{display:block;color:#6d819f;font-size:10px;font-weight:400;margin-top:4px}
+#table .keyword-expand{padding:0;border:0;background:transparent;font:inherit;font-weight:700;text-align:left;color:#243b60}
+#table .keyword-expand:focus-visible{outline:2px solid #3f65ad;outline-offset:3px}
+#table .keyword-campaign td:first-child{padding-left:30px;color:#3b5374}
+#table .keyword-campaign small{margin:0 0 4px}
+#table .keyword-campaign td:first-child span{color:#7890b4}
