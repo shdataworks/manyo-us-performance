@@ -284,7 +284,9 @@ function drawMediaDonuts(rs){
   const nameLabel = dialog.querySelector('#creativePreviewName');
   const status = dialog.querySelector('#creativePreviewStatus');
   const container = dialog.querySelector('#creativePreviewItems');
-  let controller;
+  const previewCache = new Map();
+  const previewRequests = new Map();
+  let previewSequence = 0;
   dialog.querySelector('.creative-preview-close').onclick = () => dialog.close();
   dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;
@@ -293,7 +295,7 @@ function drawMediaDonuts(rs){
       event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
   });
   dialog.addEventListener('close', () => {
-    controller?.abort();
+    previewSequence++;
     container.replaceChildren();
   });
 
@@ -359,25 +361,43 @@ function drawMediaDonuts(rs){
     container.appendChild(card);
   }
 
-  async function openCreativePreview(name) {
-    controller?.abort();
+
+  function fetchPreview(name) {
+    const saved = previewCache.get(name);
+    if (saved && Date.now() - saved.loadedAt < 300000) return Promise.resolve(saved.data);
+    if (previewRequests.has(name)) return previewRequests.get(name);
     const request = new AbortController();
-    controller = request;
+    const timeout = setTimeout(() => request.abort(), 45000);
+    const url = new URL(DASHBOARD_FEED_URL);
+    url.searchParams.set('dataset', 'creative');
+    url.searchParams.set('name', name);
+    url.searchParams.set('_', Date.now());
+    const pending = fetch(url, {cache: 'no-store', credentials: 'omit', signal: request.signal})
+      .then(async response => {
+        if (!response.ok) throw Error('소재 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        const data = await response.json();
+        if (!data.ok || !Array.isArray(data.items)) throw Error(data.error || '소재 연결을 확인해 주세요.');
+        previewCache.set(name, {loadedAt: Date.now(), data});
+        return data;
+      })
+      .catch(error => {
+        throw Error(request.signal.aborted ? '소재 조회 시간이 초과되었습니다. 다시 눌러주세요.' : error.message);
+      })
+      .finally(() => { clearTimeout(timeout); previewRequests.delete(name); });
+    previewRequests.set(name, pending);
+    return pending;
+  }
+
+  async function openCreativePreview(name) {
+    const sequence = ++previewSequence;
     nameLabel.textContent = name;
-    status.textContent = 'Meta 소재를 불러오는 중…';
+    const saved = previewCache.get(name);
+    status.textContent = saved && Date.now() - saved.loadedAt < 300000 ? '소재 미리보기' : 'Meta 소재를 불러오는 중…';
     container.replaceChildren();
     if (!dialog.open) dialog.showModal();
-    const timeout = setTimeout(() => request.abort(), 45000);
     try {
-      const url = new URL(DASHBOARD_FEED_URL);
-      url.searchParams.set('dataset', 'creative');
-      url.searchParams.set('name', name);
-      url.searchParams.set('_', Date.now());
-      const response = await fetch(url, {cache: 'no-store', credentials: 'omit', signal: request.signal});
-      if (!response.ok) throw Error('소재 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-      const data = await response.json();
-      if (!data.ok || !Array.isArray(data.items)) throw Error(data.error || '소재 연결을 확인해 주세요.');
-      if (request !== controller || !dialog.open) return;
+      const data = await fetchPreview(name);
+      if (sequence !== previewSequence || !dialog.open) return;
       const items = data.items.filter(item => item.name === name && /^\d+$/.test(String(item.id)));
       if (!items.length) {
         status.textContent = '해당 이름과 캠페인·광고 그룹이 일치하는 Meta 광고를 찾지 못했습니다.';
@@ -386,10 +406,8 @@ function drawMediaDonuts(rs){
       status.textContent = items.length + '개 광고 · 같은 소재명의 광고는 캠페인·광고 그룹별로 표시합니다. 동영상·다이내믹 소재는 썸네일 또는 Meta 미리보기로 확인할 수 있습니다.';
       items.forEach(addPreview);
     } catch (error) {
-      if (request !== controller || !dialog.open) return;
-      status.textContent = request.signal.aborted ? '소재 조회 시간이 초과되었습니다. 다시 눌러주세요.' : error.message;
-    } finally {
-      clearTimeout(timeout);
+      if (sequence !== previewSequence || !dialog.open) return;
+      status.textContent = error.message;
     }
   }
   document.addEventListener('manyo:creative-preview', event => openCreativePreview(event.detail.name));
