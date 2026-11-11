@@ -287,6 +287,7 @@ function drawMediaDonuts(rs){
   const previewCache = new Map();
   const previewRequests = new Map();
   let previewSequence = 0;
+  const videoPlayers = new Map();
   dialog.querySelector('.creative-preview-close').onclick = () => dialog.close();
   dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;
@@ -305,6 +306,7 @@ function drawMediaDonuts(rs){
       if (url.protocol !== 'https:' || url.username || url.password ||
         [...url.searchParams.keys()].some(key => /^(access_token|appsecret_proof|client_token|authorization)$/i.test(key))) return '';
       if (image) return /(^|\.)(fbcdn\.net|fbsbx\.com)$/.test(url.hostname) ? url.href : '';
+      if (url.hostname === 'business.facebook.com') return url.pathname === '/ads/api/preview_iframe.php' ? url.href : '';
       return ['www.facebook.com', 'facebook.com', 'fb.me'].includes(url.hostname) ? url.href : '';
     } catch { return ''; }
   }
@@ -359,8 +361,59 @@ function drawMediaDonuts(rs){
       card.appendChild(notice);
     }
     container.appendChild(card);
+    if (item.hasVideo) loadVideoPlayer(card, item);
   }
 
+
+
+  function fetchVideoPlayer(item) {
+    const existing = videoPlayers.get(item.id);
+    if (existing && Date.now() - existing.loadedAt < 300000) return existing.promise;
+    const request = new AbortController();
+    const timeout = setTimeout(() => request.abort(), 30000);
+    const url = new URL(DASHBOARD_FEED_URL);
+    url.searchParams.set('dataset', 'creativeVideo');
+    url.searchParams.set('name', item.name);
+    url.searchParams.set('adId', item.id);
+    const promise = fetch(url, {cache: 'no-store', credentials: 'omit', signal: request.signal})
+      .then(async response => {
+        if (!response.ok) throw Error('동영상 플레이어를 불러오지 못했습니다.');
+        const data = await response.json();
+        const source = data.ok ? safeUrl(data.previewUrl, false) : '';
+        if (!source) throw Error(data.error || '이 영상은 Meta 광고 미리보기 링크에서 재생해 주세요.');
+        return source;
+      })
+      .catch(error => { videoPlayers.delete(item.id); throw error; })
+      .finally(() => clearTimeout(timeout));
+    videoPlayers.set(item.id, {loadedAt: Date.now(), promise});
+    return promise;
+  }
+
+  async function loadVideoPlayer(card, item) {
+    const loading = document.createElement('p');
+    loading.className = 'creative-video-status';
+    loading.setAttribute('role', 'status');
+    loading.textContent = '동영상 플레이어를 불러오는 중…';
+    card.appendChild(loading);
+    try {
+      const source = await fetchVideoPlayer(item);
+      if (!card.isConnected) return;
+      const frame = document.createElement('iframe');
+      frame.className = 'creative-video-player';
+      frame.src = source;
+      frame.title = item.name + ' 동영상 광고';
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+      frame.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = 'no-referrer';
+      const image = card.querySelector('img');
+      if (image) image.replaceWith(frame);
+      else card.insertBefore(frame, loading);
+      loading.textContent = '영상 안의 재생 버튼을 눌러주세요.';
+    } catch (error) {
+      if (card.isConnected) loading.textContent = error.message;
+    }
+  }
 
   function fetchPreview(name) {
     const saved = previewCache.get(name);
@@ -403,7 +456,7 @@ function drawMediaDonuts(rs){
         status.textContent = '해당 이름과 캠페인·광고 그룹이 일치하는 Meta 광고를 찾지 못했습니다.';
         return;
       }
-      status.textContent = items.length + '개 광고 · 같은 소재명의 광고는 캠페인·광고 그룹별로 표시합니다. 동영상·다이내믹 소재는 썸네일 또는 Meta 미리보기로 확인할 수 있습니다.';
+      status.textContent = items.length + '개 광고 · 같은 소재명의 광고는 캠페인·광고 그룹별로 표시합니다. 동영상 소재는 플레이어가 열리면 재생 버튼을 눌러주세요.';
       items.forEach(addPreview);
     } catch (error) {
       if (sequence !== previewSequence || !dialog.open) return;
