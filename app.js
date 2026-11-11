@@ -331,7 +331,7 @@ function drawMediaDonuts(rs){
       frame.loading = 'lazy';
       card.appendChild(frame);
     }
-    if (imageUrl || thumbnailUrl) {
+    if (!item.hasVideo && (imageUrl || thumbnailUrl)) {
       const image = document.createElement('img');
       image.src = imageUrl || thumbnailUrl;
       image.alt = item.name + (imageUrl ? ' 소재 이미지' : ' 소재 썸네일');
@@ -408,7 +408,7 @@ function drawMediaDonuts(rs){
       frame.referrerPolicy = 'no-referrer';
       const image = card.querySelector('img');
       if (image) image.replaceWith(frame);
-      else card.insertBefore(frame, loading);
+      else card.insertBefore(frame, card.querySelector('a') || loading);
       loading.textContent = '영상 안의 재생 버튼을 눌러주세요.';
     } catch (error) {
       if (card.isConnected) loading.textContent = error.message;
