@@ -95,7 +95,12 @@ function renderDetailTable(filteredRows) {
   const metricCells = row => cols.map(key => '<td>' + fmt(row[key], key) + '</td>').join('');
   const body = visible.map((row, index) => {
     if (!keywordView) {
-      return '<tr><td title="' + esc(row.name) + '">' + esc(row.name) + '</td>' + metricCells(row) + '</tr>';
+      const metaCreative = view === 'creative' && filteredRows.some(item =>
+        item.ad === row.name && String(item.media).toLowerCase() === 'meta');
+      const nameCell = metaCreative
+        ? '<button type="button" class="creative-preview-trigger" data-creative-index="' + index + '" title="Meta 소재 미리보기">' + esc(row.name) + ' <span aria-hidden="true">↗</span></button>'
+        : esc(row.name);
+      return '<tr><td title="' + esc(row.name) + '">' + nameCell + '</td>' + metricCells(row) + '</tr>';
     }
     const campaigns = aggregate(byKeyword.get(row.name), 'campaign')
       .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
@@ -123,6 +128,12 @@ const views=[['summary','◫','Summary'],['meta','◎','Meta'],['google','⌕','
 $('nav').innerHTML=views.map(([v,i,n])=>'<button data-view="'+v+'">'+i+'　'+n+'</button>').join('');$('group').innerHTML=['media','product','campaign','adset','ad','keyword','ad type','date','week','month'].map(k=>'<option value="'+k+'">'+labels[k]+'</option>').join('');
 function switchView(v){view=v;page=0;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));$('dashboard').hidden=['compare','source'].includes(v);$('comparison').hidden=v!=='compare';$('source').hidden=v!=='source';$('title').textContent=v==='summary'?'광고 성과 한눈에 보기':views.find(x=>x[0]===v)[2]+' 분석';$('keywordFilters').hidden=v!=='keyword';$('group').disabled=['keyword','creative'].includes(v);$('media').disabled=v==='keyword';$('type').disabled=v==='keyword';$('tableTitle').textContent=v==='keyword'?'키워드별 성과':'성과 상세';$('search').placeholder=v==='keyword'?'결과에서 키워드 검색':'이름 검색';$('performanceNotice').textContent=v==='keyword'?'키워드 기준 · US RAW의 Google / SA 행에 기록된 ad 값을 키워드로 집계합니다. 같은 키워드는 캠페인·그룹을 합산하며, 필터로 범위를 좁힐 수 있습니다. 원본에 등록 키워드·검색어 구분 열은 없습니다.':'성과 기준 · US 자사몰 RAW의 구매·매출 보고값을 사용합니다. CTR·CVR·ROAS는 합산 후 재계산합니다. 원본에 통화 표기가 없어 금액은 원본 단위로 표시합니다.';if(v==='keyword'){ $('media').value='';$('type').value='';$('search').value='';updateKeywordOptions();$('group').value='keyword';}else if($('group').value==='keyword')$('group').value='media';if(v==='campaign')$('group').value='campaign';if(v==='creative'){$('group').value='ad';$('media').value='';$('type').value='';$('search').value='';$('tableTitle').textContent='소재별 성과';$('search').placeholder='소재명 검색';$('performanceNotice').textContent='소재 기준 · RAW의 DA 행 중 소재명이 있는 데이터만 집계합니다. Google SA 검색어는 Keywords 탭에서 확인할 수 있습니다.'}labels.ad=v==='creative'?'소재':'소재 / 검색어';render();if(v==='compare')compare()}
 $('nav').onclick=e=>{let b=e.target.closest('[data-view]');if(b)switchView(b.dataset.view)};['start','end','media','product','type','group','metric','lineMetric','grain'].forEach(id=>$(id).onchange=()=>{if(id==='start'||id==='end'){activePeriod=null;syncPeriodButtons()}page=0;render();if(view==='compare')compare()});$('search').oninput=()=>{page=0;render()};$('table').onclick = event => {
+  const creative = event.target.closest('[data-creative-index]');
+  if (view === 'creative' && creative) {
+    const row = displayRows[page * 20 + Number(creative.dataset.creativeIndex)];
+    if (row) document.dispatchEvent(new CustomEvent('manyo:creative-preview', {detail: {name: row.name}}));
+    return;
+  }
   const toggle = event.target.closest('[data-keyword-index]');
   if (view === 'keyword' && toggle) {
     const index = Number(toggle.dataset.keywordIndex);
@@ -262,3 +273,124 @@ function drawMediaDonuts(rs){
  return '<section class="panel media-donut-card"><h2>'+title+'</h2><svg class="media-donut" viewBox="0 0 240 240" role="img" aria-label="'+title+' 합계 '+unit(data.total)+'"><circle cx="120" cy="120" r="86" fill="none" stroke="#edf1f6" stroke-width="22"/>'+rings+'<text x="120" y="109" text-anchor="middle" class="donut-total-label">합계</text><text x="120" y="138" text-anchor="middle" class="donut-total-value">'+unit(data.total)+'</text></svg><div class="media-donut-legend">'+(data.rows.length?data.rows.map(r=>'<div class="media-donut-row"><span><i style="background:'+color(r.key)+'"></i>'+esc(budgetMediaLabel(r.key))+'</span><strong>'+unit(r.value)+'</strong><small>'+r.share.toFixed(2)+'%</small></div>').join(''):'<p class="donut-empty">선택 조건에 데이터가 없습니다.</p>')+'</div></section>';
  }).join('');
 }
+
+
+(function installCreativePreview() {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'creative-preview-dialog';
+  dialog.setAttribute('aria-labelledby', 'creativePreviewTitle');
+  dialog.innerHTML = '<div class="creative-preview-header"><div><h2 id="creativePreviewTitle">소재 미리보기</h2><p id="creativePreviewName"></p></div><button type="button" class="creative-preview-close" aria-label="미리보기 닫기">닫기 ×</button></div><p id="creativePreviewStatus" role="status" aria-live="polite"></p><div id="creativePreviewItems"></div>';
+  document.body.appendChild(dialog);
+  const nameLabel = dialog.querySelector('#creativePreviewName');
+  const status = dialog.querySelector('#creativePreviewStatus');
+  const container = dialog.querySelector('#creativePreviewItems');
+  let controller;
+  dialog.querySelector('.creative-preview-close').onclick = () => dialog.close();
+  dialog.addEventListener('click', event => {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right ||
+      event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+  });
+  dialog.addEventListener('close', () => {
+    controller?.abort();
+    container.replaceChildren();
+  });
+
+  function safeUrl(value, image) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password ||
+        [...url.searchParams.keys()].some(key => /^(access_token|appsecret_proof|client_token|authorization)$/i.test(key))) return '';
+      if (image) return /(^|\.)(fbcdn\.net|fbsbx\.com)$/.test(url.hostname) ? url.href : '';
+      return ['www.facebook.com', 'facebook.com', 'fb.me'].includes(url.hostname) ? url.href : '';
+    } catch { return ''; }
+  }
+
+  function addPreview(item) {
+    const card = document.createElement('article');
+    card.className = 'creative-preview-card';
+    const heading = document.createElement('h3');
+    heading.textContent = item.campaign || 'Meta 광고';
+    const context = document.createElement('p');
+    context.textContent = (item.adset || '광고 그룹 미지정') + ' · 광고 ID ' + item.id;
+    card.append(heading, context);
+    const previewUrl = safeUrl(item.previewUrl, false);
+    const imageUrl = safeUrl(item.imageUrl, true);
+    const thumbnailUrl = safeUrl(item.thumbnailUrl, true);
+    if (previewUrl) {
+      const frame = document.createElement('iframe');
+      frame.src = previewUrl;
+      frame.title = item.name + ' Meta 광고 미리보기';
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+      frame.referrerPolicy = 'no-referrer';
+      frame.loading = 'lazy';
+      card.appendChild(frame);
+    }
+    if (imageUrl || thumbnailUrl) {
+      const image = document.createElement('img');
+      image.src = imageUrl || thumbnailUrl;
+      image.alt = item.name + (imageUrl ? ' 소재 이미지' : ' 소재 썸네일');
+      image.loading = 'lazy';
+      image.referrerPolicy = 'no-referrer';
+      image.onerror = () => {
+        if (thumbnailUrl && image.src !== thumbnailUrl) { image.src = thumbnailUrl; return; }
+        image.remove();
+        const notice = document.createElement('p');
+        notice.textContent = '이미지가 만료되었거나 표시되지 않습니다. Meta 미리보기에서 확인해 주세요.';
+        card.appendChild(notice);
+      };
+      card.appendChild(image);
+    }
+    const linkUrl = safeUrl(item.previewLink, false);
+    if (linkUrl) {
+      const link = document.createElement('a');
+      link.href = linkUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Meta 광고 미리보기 열기 ↗';
+      card.appendChild(link);
+    }
+    if (!previewUrl && !imageUrl && !thumbnailUrl && !linkUrl) {
+      const notice = document.createElement('p');
+      notice.textContent = '이 광고는 미리보기 정보를 제공하지 않습니다.';
+      card.appendChild(notice);
+    }
+    container.appendChild(card);
+  }
+
+  async function openCreativePreview(name) {
+    controller?.abort();
+    const request = new AbortController();
+    controller = request;
+    nameLabel.textContent = name;
+    status.textContent = 'Meta 소재를 불러오는 중…';
+    container.replaceChildren();
+    if (!dialog.open) dialog.showModal();
+    const timeout = setTimeout(() => request.abort(), 45000);
+    try {
+      const url = new URL(DASHBOARD_FEED_URL);
+      url.searchParams.set('dataset', 'creative');
+      url.searchParams.set('name', name);
+      url.searchParams.set('_', Date.now());
+      const response = await fetch(url, {cache: 'no-store', credentials: 'omit', signal: request.signal});
+      if (!response.ok) throw Error('소재 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      const data = await response.json();
+      if (!data.ok || !Array.isArray(data.items)) throw Error(data.error || '소재 연결을 확인해 주세요.');
+      if (request !== controller || !dialog.open) return;
+      const items = data.items.filter(item => item.name === name && /^\d+$/.test(String(item.id)));
+      if (!items.length) {
+        status.textContent = '해당 이름과 캠페인·광고 그룹이 일치하는 Meta 광고를 찾지 못했습니다.';
+        return;
+      }
+      status.textContent = items.length + '개 광고 · 같은 소재명의 광고는 캠페인·광고 그룹별로 표시합니다. 동영상·다이내믹 소재는 썸네일 또는 Meta 미리보기로 확인할 수 있습니다.';
+      items.forEach(addPreview);
+    } catch (error) {
+      if (request !== controller || !dialog.open) return;
+      status.textContent = request.signal.aborted ? '소재 조회 시간이 초과되었습니다. 다시 눌러주세요.' : error.message;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  document.addEventListener('manyo:creative-preview', event => openCreativePreview(event.detail.name));
+})();
