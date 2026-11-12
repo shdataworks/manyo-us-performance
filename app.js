@@ -123,7 +123,7 @@ function renderDetailTable(filteredRows) {
     '</tr></thead><tbody>' + body + '</tbody>';
 }
 
-function render(){if(view==='creative')$('group').value='ad';drawBudget();if(view==='keyword')$('group').value='keyword';let rs=filtered(),t=total(rs);drawMediaDonuts(rs);if(view==='keyword')$('keywordBasis').textContent='Google SA · '+num(rs.length)+'행 · '+num(aggregate(rs,'keyword').length)+'개 키워드';$('kpis').innerHTML=['cost','sales','roas','purchase','cart','click','cpc','ctr','cvr','signup','subscribe'].map(k=>'<div class="kpi"><label>'+labels[k]+'</label><strong>'+fmt(t[k],k)+'</strong><em>'+({roas:'매출 ÷ 광고비 × 100',cpc:'광고비 ÷ 클릭 · 원본 금액 단위',ctr:'클릭 ÷ 노출 × 100',cvr:'구매 ÷ 클릭 × 100'}[k]||(['cost','sales'].includes(k)?'원본 금액 단위':'선택 기간 합계'))+'</em></div>').join('');$('period').textContent=$('start').value+' ~ '+$('end').value+' · '+num(rs.length)+'행';chart(rs);bars(rs,'cost','costbars');bars(rs,'sales','salesbars');let q=$('search').value.toLowerCase();displayRows=aggregate(rs,$('group').value).filter(r=>r.name.toLowerCase().includes(q)).sort((a,b)=>direction*(sort==='name'?a.name.localeCompare(b.name):(a[sort]??-Infinity)-(b[sort]??-Infinity)));page=Math.max(0,Math.min(page,Math.ceil(displayRows.length/20)-1));renderDetailTable(rs);$('count').textContent=num(displayRows.length)+'개 항목';$('page').textContent=(page+1)+' / '+Math.max(1,Math.ceil(displayRows.length/20));$('prev').disabled=page===0;$('next').disabled=(page+1)*20>=displayRows.length;drawDailyPerformance()}
+function render(){if(view==='creative')$('group').value='ad';drawBudget();if(view==='keyword')$('group').value='keyword';let rs=filtered(),t=total(rs);drawMediaDonuts(rs);if(view==='keyword')$('keywordBasis').textContent='Google SA · '+num(rs.length)+'행 · '+num(aggregate(rs,'keyword').length)+'개 키워드';$('kpis').innerHTML=['cost','sales','roas','purchase','cart','click','cpc','ctr','cvr','signup','subscribe'].map(k=>'<div class="kpi"><label>'+(k==='cost'?'선택 기간 광고비':labels[k])+'</label><strong>'+fmt(t[k],k)+'</strong><em>'+({roas:'매출 ÷ 광고비 × 100',cpc:'광고비 ÷ 클릭 · 원본 금액 단위',ctr:'클릭 ÷ 노출 × 100',cvr:'구매 ÷ 클릭 × 100'}[k]||(k==='cost'?esc($('start').value+' ~ '+$('end').value):k==='sales'?'원본 금액 단위':'선택 기간 합계'))+'</em></div>').join('');$('period').textContent=$('start').value+' ~ '+$('end').value+' · '+num(rs.length)+'행';chart(rs);bars(rs,'cost','costbars');bars(rs,'sales','salesbars');let q=$('search').value.toLowerCase();displayRows=aggregate(rs,$('group').value).filter(r=>r.name.toLowerCase().includes(q)).sort((a,b)=>direction*(sort==='name'?a.name.localeCompare(b.name):(a[sort]??-Infinity)-(b[sort]??-Infinity)));page=Math.max(0,Math.min(page,Math.ceil(displayRows.length/20)-1));renderDetailTable(rs);$('count').textContent=num(displayRows.length)+'개 항목';$('page').textContent=(page+1)+' / '+Math.max(1,Math.ceil(displayRows.length/20));$('prev').disabled=page===0;$('next').disabled=(page+1)*20>=displayRows.length;drawDailyPerformance()}
 const views=[['summary','◫','Summary'],['meta','◎','Meta'],['google','⌕','Google'],['keyword','⌕','Keywords'],['campaign','☷','Campaign'],['creative','▧','Creative'],['compare','⇄','기간 비교'],['source','↻','데이터 관리']];
 $('nav').innerHTML=views.map(([v,i,n])=>'<button data-view="'+v+'">'+i+'　'+n+'</button>').join('');$('group').innerHTML=['media','product','campaign','adset','ad','keyword','ad type','date','week','month'].map(k=>'<option value="'+k+'">'+labels[k]+'</option>').join('');
 function switchView(v){view=v;page=0;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));$('dashboard').hidden=['compare','source'].includes(v);$('comparison').hidden=v!=='compare';$('source').hidden=v!=='source';$('title').textContent=v==='summary'?'광고 성과 한눈에 보기':views.find(x=>x[0]===v)[2]+' 분석';$('keywordFilters').hidden=v!=='keyword';$('group').disabled=['keyword','creative'].includes(v);$('media').disabled=v==='keyword';$('type').disabled=v==='keyword';$('tableTitle').textContent=v==='keyword'?'키워드별 성과':'성과 상세';$('search').placeholder=v==='keyword'?'결과에서 키워드 검색':'이름 검색';$('performanceNotice').textContent=v==='keyword'?'키워드 기준 · US RAW의 Google / SA 행에 기록된 ad 값을 키워드로 집계합니다. 같은 키워드는 캠페인·그룹을 합산하며, 필터로 범위를 좁힐 수 있습니다. 원본에 등록 키워드·검색어 구분 열은 없습니다.':'성과 기준 · US 자사몰 RAW의 구매·매출 보고값을 사용합니다. CTR·CVR·ROAS는 합산 후 재계산합니다. 원본에 통화 표기가 없어 금액은 원본 단위로 표시합니다.';if(v==='keyword'){ $('media').value='';$('type').value='';$('search').value='';updateKeywordOptions();$('group').value='keyword';}else if($('group').value==='keyword')$('group').value='media';if(v==='campaign')$('group').value='campaign';if(v==='creative'){$('group').value='ad';$('media').value='';$('type').value='';$('search').value='';$('tableTitle').textContent='소재별 성과';$('search').placeholder='소재명 검색';$('performanceNotice').textContent='소재 기준 · RAW의 DA 행 중 소재명이 있는 데이터만 집계합니다. Google SA 검색어는 Keywords 탭에서 확인할 수 있습니다.'}labels.ad=v==='creative'?'소재':'소재 / 검색어';render();if(v==='compare')compare()}
@@ -218,7 +218,15 @@ function drawBudget(){
  $('budgetPanel').hidden=view!=='summary';
  if(!$('budgetMonth').value)$('budgetMonth').value=kstToday().slice(0,7);
  const month=$('budgetMonth').value,z=budgetSummary(rows,budgetTargets,month),t=budgetTargets[month];
+ $('budgetSpentLabel').textContent=month.replace('-','년 ')+'월 누적 소진액';
  $('budgetSpent').textContent=num(z.spent)+'원';
+ const selected=filtered(),selectedCost=total(selected).cost;
+ const monthlyRows=rows.filter(r=>r.date.slice(0,7)===month);
+ const selectedSet=new Set(selected),sameScope=selected.length===monthlyRows.length&&monthlyRows.every(r=>selectedSet.has(r));
+ $('budgetComparison').textContent=sameScope
+  ? '아래 선택 기간 광고비와 같은 범위입니다 · '+num(selectedCost)+'원'
+  : '월 소진액은 '+month+' 전체 매체·상품 기준입니다. 아래 광고비는 '+$('start').value+' ~ '+$('end').value+' 및 상단 필터 기준 '+num(selectedCost)+'원입니다.';
+ $('budgetAlign').hidden=sameScope;
  $('budgetTarget').textContent=z.target==null?'목표 미설정':num(z.target)+'원';
  $('budgetRate').textContent=z.rate==null?'—':z.rate.toFixed(2)+'%';
  $('budgetFill').style.width=Math.min(100,z.rate||0)+'%';
@@ -253,6 +261,14 @@ async function refreshBudget(){
  }else budgetInfo='이전 목표 유지 · '+e.message;
  }finally{b.disabled=false;drawBudget()}
 }
+$('budgetAlign').onclick=()=>{
+ const month=$('budgetMonth').value;if(!month)return;
+ $('start').value=month+'-01';
+ const [year,m]=month.split('-').map(Number);
+ $('end').value=iso(Date.UTC(year,m,0));
+ for(const id of ['media','product','type'])$(id).value='';
+ activePeriod=null;page=0;syncPeriodButtons();render();
+};
 $('budgetMonth').onchange=drawBudget;$('budgetRefresh').onclick=refreshBudget;refreshBudget();
 
 
