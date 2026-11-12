@@ -226,7 +226,6 @@ function drawBudget(){
  $('budgetComparison').textContent=sameScope
   ? '아래 선택 기간 광고비와 같은 범위입니다 · '+num(selectedCost)+'원'
   : '월 소진액은 '+month+' 전체 매체·상품 기준입니다. 아래 광고비는 '+$('start').value+' ~ '+$('end').value+' 및 상단 필터 기준 '+num(selectedCost)+'원입니다.';
- $('budgetAlign').hidden=sameScope;
  $('budgetTarget').textContent=z.target==null?'목표 미설정':num(z.target)+'원';
  $('budgetRate').textContent=z.rate==null?'—':z.rate.toFixed(2)+'%';
  $('budgetFill').style.width=Math.min(100,z.rate||0)+'%';
@@ -261,14 +260,6 @@ async function refreshBudget(){
  }else budgetInfo='이전 목표 유지 · '+e.message;
  }finally{b.disabled=false;drawBudget()}
 }
-$('budgetAlign').onclick=()=>{
- const month=$('budgetMonth').value;if(!month)return;
- $('start').value=month+'-01';
- const [year,m]=month.split('-').map(Number);
- $('end').value=iso(Date.UTC(year,m,0));
- for(const id of ['media','product','type'])$(id).value='';
- activePeriod=null;page=0;syncPeriodButtons();render();
-};
 $('budgetMonth').onchange=drawBudget;$('budgetRefresh').onclick=refreshBudget;refreshBudget();
 
 
