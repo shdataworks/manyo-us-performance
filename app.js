@@ -105,10 +105,10 @@ function renderDetailTable(filteredRows) {
     const campaigns = aggregate(byKeyword.get(row.name), 'campaign')
       .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
     const expanded = keywordIsExpanded(row.name);
-    const parent = '<tr class="keyword-total"><td><button type="button" class="keyword-expand" data-keyword-index="' +
+    const parent = '<tr class="keyword-total' + (expanded ? '' : ' keyword-collapsed') + '"><td><button type="button" class="keyword-expand" data-keyword-index="' +
       index + '" aria-expanded="' + expanded + '"><span aria-hidden="true">' +
-      (expanded ? '▾' : '▸') + '</span> ' + esc(row.name) + '</button><small>' +
-      num(campaigns.length) + '개 캠페인 합계</small></td>' + metricCells(row) + '</tr>';
+      (expanded ? '▾' : '') + '</span>' + (expanded ? ' ' : '') + esc(row.name) + '</button>' +
+      (expanded ? '<small>' + num(campaigns.length) + '개 캠페인 합계</small>' : '') + '</td>' + metricCells(row) + '</tr>';
     if (!expanded) return parent;
     return parent + campaigns.map(campaign =>
       '<tr class="keyword-campaign"><td title="' + esc(campaign.name) +
